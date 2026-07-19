@@ -191,7 +191,8 @@ export default function App() {
       await updateRoom(roomCode, (latest) => {
         if (!latest) return undefined; // abort this pass, retry once real data loads
         if (!latest.round) return latest;
-        const updatedAnswers = { ...latest.round.answers, [myId.current]: value };
+        const currentAnswers = latest.round.answers || {};
+        const updatedAnswers = { ...currentAnswers, [myId.current]: value };
         const playerIds = latest.players.map((p) => p.id);
         const bothAnswered = playerIds.length === 2 && playerIds.every((id) => updatedAnswers[id] !== undefined);
         let updatedRoom = { ...latest, round: { ...latest.round, answers: updatedAnswers } };
@@ -260,8 +261,10 @@ export default function App() {
   const partner = room?.players?.find((p) => p.id !== myId.current);
   const me = room?.players?.find((p) => p.id === myId.current);
   const iAmFirst = room?.players?.[0]?.id === myId.current;
-  const iAnswered = room?.round && room.round.answers[myId.current] !== undefined;
-  const roundsPlayed = room?.history?.length || 0;
+  const roundAnswers = room?.round?.answers || {};
+  const historyList = room?.history || [];
+  const iAnswered = room?.round && roundAnswers[myId.current] !== undefined;
+  const roundsPlayed = historyList.length;
 
   const displayAnswer = (round, raw) => {
     if (!round) return raw;
@@ -464,7 +467,7 @@ export default function App() {
                   {room.players.map((p) => (
                     <div key={p.id} style={styles.answerChip}>
                       <span style={styles.answerChipName}>{p.name}</span>
-                      <span>{displayAnswer(room.round, room.round.answers[p.id])}</span>
+                      <span>{displayAnswer(room.round, roundAnswers[p.id])}</span>
                     </div>
                   ))}
                 </div>
@@ -492,7 +495,7 @@ export default function App() {
               </p>
             </div>
             <div style={styles.historyList}>
-              {room.history.map((h, i) => (
+              {historyList.map((h, i) => (
                 <div key={i} style={styles.historyItem}>
                   <div style={styles.historyPrompt}>
                     {h.match ? "✦" : "·"} {h.promptText}
@@ -500,7 +503,7 @@ export default function App() {
                   <div style={styles.historyAnswers}>
                     {room.players.map((p) => (
                       <span key={p.id} style={styles.historyAnswer}>
-                        {p.name}: {displayAnswer(h, h.answers[p.id])}
+                        {p.name}: {displayAnswer(h, (h.answers || {})[p.id])}
                       </span>
                     ))}
                   </div>
