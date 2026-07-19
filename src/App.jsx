@@ -151,36 +151,46 @@ export default function App() {
 
   const startOrNext = useCallback(async () => {
     setBusy(true);
-    await updateRoom(roomCode, (latest) => {
-      const roundsPlayed = latest.history?.length || 0;
-      if (roundsPlayed >= TOTAL_ROUNDS) {
-        return { ...latest, status: "finished" };
-      }
-      const { next, reset } = pickNextPrompt(latest.playedIds || []);
-      return {
-        ...latest,
-        playedIds: reset ? [] : latest.playedIds,
-        status: "playing",
-        round: {
-          promptId: next.id,
-          promptText: next.text,
-          type: next.type,
-          category: next.category,
-          options: next.options || null,
-          answers: {},
-          revealed: false,
-          match: null,
-        },
-      };
-    });
+    setError("");
+    try {
+      await updateRoom(roomCode, (latest) => {
+        if (!latest) return undefined; // abort this pass, retry once real data loads
+        const roundsPlayed = latest.history?.length || 0;
+        if (roundsPlayed >= TOTAL_ROUNDS) {
+          return { ...latest, status: "finished" };
+        }
+        const { next, reset } = pickNextPrompt(latest.playedIds || []);
+        return {
+          ...latest,
+          playedIds: reset ? [] : latest.playedIds,
+          status: "playing",
+          round: {
+            promptId: next.id,
+            promptText: next.text,
+            type: next.type,
+            category: next.category,
+            options: next.options || null,
+            answers: {},
+            revealed: false,
+            match: null,
+          },
+        };
+      });
+    } catch (e) {
+      console.error(e);
+      setError("Couldn't start the round. Check your connection and try again.");
+    }
     setBusy(false);
   }, [roomCode]);
 
   const submitAnswer = useCallback(
     async (value) => {
       setBusy(true);
+      setError("");
+      try {
       await updateRoom(roomCode, (latest) => {
-        if (!latest?.round) return latest;
+        if (!latest) return undefined; // abort this pass, retry once real data loads
+        if (!latest.round) return latest;
         const updatedAnswers = { ...latest.round.answers, [myId.current]: value };
         const playerIds = latest.players.map((p) => p.id);
         const bothAnswered = playerIds.length === 2 && playerIds.every((id) => updatedAnswers[id] !== undefined);
@@ -215,6 +225,10 @@ export default function App() {
         }
         return updatedRoom;
       });
+      } catch (e) {
+        console.error(e);
+        setError("Couldn't submit your answer. Check your connection and try again.");
+      }
       setBusy(false);
     },
     [roomCode]
@@ -222,13 +236,16 @@ export default function App() {
 
   const playAgain = useCallback(async () => {
     setBusy(true);
-    await updateRoom(roomCode, (latest) => ({
-      ...latest,
-      history: [],
-      matches: 0,
-      status: "lobby",
-      round: null,
-    }));
+    setError("");
+    try {
+      await updateRoom(roomCode, (latest) => {
+        if (!latest) return undefined; // abort this pass, retry once real data loads
+        return { ...latest, history: [], matches: 0, status: "lobby", round: null };
+      });
+    } catch (e) {
+      console.error(e);
+      setError("Couldn't reset the game. Check your connection and try again.");
+    }
     setBusy(false);
   }, [roomCode]);
 
@@ -284,6 +301,7 @@ export default function App() {
       <div className="glow glow2"></div>
 
       <div style={styles.card}>
+        {error && joined && <div style={styles.error}>{error}</div>}
         {!joined && (
           <div className="fadeUp">
             <div style={styles.eyebrow}>a little game for two</div>
