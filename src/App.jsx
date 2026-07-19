@@ -162,7 +162,7 @@ export default function App() {
         const { next, reset } = pickNextPrompt(latest.playedIds || []);
         return {
           ...latest,
-          playedIds: reset ? [] : latest.playedIds,
+          playedIds: reset ? [] : (latest.playedIds || []),
           status: "playing",
           round: {
             promptId: next.id,
