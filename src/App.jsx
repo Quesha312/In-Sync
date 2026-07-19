@@ -144,7 +144,7 @@ export default function App() {
       setJoined(true);
     } catch (e) {
       console.error(e);
-      setError("Couldn't reach the room. Check your connection and try again.");
+      setError(`Couldn't reach the room: ${e.code || e.message || "unknown error"}`);
     }
     setBusy(false);
   }, [name, roomCodeInput]);
@@ -178,7 +178,7 @@ export default function App() {
       });
     } catch (e) {
       console.error(e);
-      setError("Couldn't start the round. Check your connection and try again.");
+      setError(`Couldn't start the round: ${e.code || e.message || "unknown error"}`);
     }
     setBusy(false);
   }, [roomCode]);
@@ -227,7 +227,7 @@ export default function App() {
       });
       } catch (e) {
         console.error(e);
-        setError("Couldn't submit your answer. Check your connection and try again.");
+        setError(`Couldn't submit your answer: ${e.code || e.message || "unknown error"}`);
       }
       setBusy(false);
     },
@@ -244,7 +244,7 @@ export default function App() {
       });
     } catch (e) {
       console.error(e);
-      setError("Couldn't reset the game. Check your connection and try again.");
+      setError(`Couldn't reset the game: ${e.code || e.message || "unknown error"}`);
     }
     setBusy(false);
   }, [roomCode]);
