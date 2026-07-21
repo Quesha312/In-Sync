@@ -155,8 +155,10 @@ function doFlip(latest, myId) {
   const result = resolveWarRound(hands, p1id, p2id);
   const cardCounts = { [p1id]: hands[p1id].length, [p2id]: hands[p2id].length };
   const over = cardCounts[p1id] === 0 || cardCounts[p2id] === 0;
+  const overWinnerId = over ? (cardCounts[p1id] > 0 ? p1id : p2id) : null;
   return {
     ...latest,
+    scoreboard: over ? creditScoreboard(latest, overWinnerId) : latest.scoreboard,
     game: {
       ...g,
       hands,
@@ -164,7 +166,7 @@ function doFlip(latest, myId) {
       flips: {},
       lastResult: { winnerId: result.winnerId, cardsWon: result.pot.length, cards: result.cards || null, warHappened: result.pot.length > 2 },
       phase: over ? "over" : "active",
-      overWinnerId: over ? (cardCounts[p1id] > 0 ? p1id : p2id) : null,
+      overWinnerId,
       finalCounts: over ? cardCounts : g.finalCounts || null,
     },
   };
@@ -190,6 +192,14 @@ function decideWinner(scores, players) {
   const s2 = scores[p2] || 0;
   if (s1 === s2) return "tie";
   return s1 > s2 ? p1 : p2;
+}
+
+function creditScoreboard(latest, winnerId) {
+  const sb = { ...(latest.scoreboard || {}) };
+  if (winnerId && winnerId !== "tie") {
+    sb[winnerId] = (sb[winnerId] || 0) + 1;
+  }
+  return sb;
 }
 
 function buildMemoryGame(starterId, p1id, p2id) {
@@ -288,6 +298,7 @@ function doAskForRank(latest, myId, rank) {
 
   return {
     ...latest,
+    scoreboard: over ? creditScoreboard(latest, overWinnerId) : latest.scoreboard,
     game: {
       ...g,
       hands: newHands,
@@ -341,6 +352,7 @@ function doPlayEightsCard(latest, myId, cardIndex, declaredSuit) {
   const over = newHand.length === 0;
   return {
     ...latest,
+    scoreboard: over ? creditScoreboard(latest, myId) : latest.scoreboard,
     game: {
       ...g,
       hands: { ...g.hands, [myId]: newHand },
@@ -454,6 +466,7 @@ function doLayMeld(latest, myId, indices) {
   const handEmpty = remaining.length === 0;
   return {
     ...latest,
+    scoreboard: handEmpty ? creditScoreboard(latest, myId) : latest.scoreboard,
     game: {
       ...g,
       hands: { ...g.hands, [myId]: remaining },
@@ -505,6 +518,7 @@ function doKnockTonk(latest, myId) {
   else overWinnerId = "tie";
   return {
     ...latest,
+    scoreboard: creditScoreboard(latest, overWinnerId),
     game: { ...g, phase: "over", overWinnerId, lastAction: { text: `knocked with ${myVal}` }, finalValues: { [myId]: myVal, [otherId]: otherVal } },
   };
 }
@@ -604,6 +618,7 @@ function doDeucesDraw(latest, myId, discardIndices) {
   else winnerId = "tie";
   return {
     ...latest,
+    scoreboard: creditScoreboard(latest, winnerId),
     game: { ...g, hands: newHands, deck, kept, phase: "revealed", results: { [p1]: eval1, [p2]: eval2, winnerId } },
   };
 }
@@ -676,6 +691,7 @@ export default function App() {
             pickerId: myId.current,
             status: "lobby",
             game: null,
+            scoreboard: {},
           };
         }
         const exists = (latest.players || []).find((p) => p.id === myId.current);
@@ -889,15 +905,17 @@ export default function App() {
           const scores = { ...(g.scores || {}) };
           scores[myId.current] = (scores[myId.current] || 0) + 1;
           const allMatched = newBoard.every((c) => c.matched);
+          const memWinnerId = allMatched ? decideWinner(scores, latest.players) : null;
           return {
             ...latest,
+            scoreboard: allMatched ? creditScoreboard(latest, memWinnerId) : latest.scoreboard,
             game: {
               ...g,
               board: newBoard,
               flippedIndices: [],
               scores,
               phase: allMatched ? "over" : "active",
-              overWinnerId: allMatched ? decideWinner(scores, latest.players) : null,
+              overWinnerId: memWinnerId,
             },
           };
         }
@@ -970,6 +988,7 @@ export default function App() {
         const otherId = latest.players.find((p) => p.id !== myId.current)?.id || myId.current;
         return {
           ...latest,
+          scoreboard: over ? creditScoreboard(latest, myId.current) : latest.scoreboard,
           game: {
             ...g,
             shotsAt,
@@ -1169,6 +1188,19 @@ export default function App() {
             <button className="leaveLink" onClick={leaveRoom} disabled={busy}>Leave room</button>
           </div>
         )}
+        {joined && room && room.players.length === 2 && (() => {
+          const scoreboard = room.scoreboard || {};
+          const myWins = scoreboard[myId.current] || 0;
+          const theirWins = scoreboard[partner?.id] || 0;
+          if (myWins === 0 && theirWins === 0) return null;
+          return (
+            <div style={styles.scoreboardBar}>
+              <span>{myWins > theirWins ? "👑 " : ""}You {myWins}</span>
+              <span style={{ color: "#8B7FA8" }}>·</span>
+              <span>{theirWins} {partner?.name}{theirWins > myWins ? " 👑" : ""}</span>
+            </div>
+          );
+        })()}
         {error && <div style={styles.error}>{error}</div>}
 
         {!joined && (
@@ -1857,16 +1889,22 @@ export default function App() {
 
 const styles = {
   page: { minHeight: "100vh", background: "linear-gradient(160deg, #1B1035 0%, #241645 55%, #1B1035 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", position: "relative", overflow: "hidden", fontFamily: "'Manrope', sans-serif" },
-  card: { position: "relative", zIndex: 1, width: "100%", maxWidth: 420, background: "rgba(42, 27, 77, 0.65)", backdropFilter: "blur(14px)", border: "1px solid rgba(245, 239, 255, 0.1)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" },
+  card: { position: "relative", zIndex: 1, width: "100%", maxWidth: 420, background: "rgba(35, 22, 66, 0.92)", border: "1px solid rgba(245, 239, 255, 0.1)", borderRadius: 24, padding: "32px 28px", boxShadow: "0 20px 60px rgba(0,0,0,0.35)" },
   eyebrow: { fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "#E8B85C", marginBottom: 8 },
   h1: { fontFamily: "'Fraunces', serif", fontStyle: "italic", fontWeight: 500, fontSize: 40, color: "#F5EFFF", margin: "0 0 10px 0" },
   h2: { fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 26, color: "#F5EFFF", margin: "0 0 10px 0", textAlign: "center" },
   sub: { color: "#C9BEE0", fontSize: 15, lineHeight: 1.5, margin: "0 0 20px 0", textAlign: "center" },
   field: { marginBottom: 16, textAlign: "left" },
   label: { display: "block", fontSize: 12, color: "#C9BEE0", marginBottom: 6, fontWeight: 600 },
-  input: { width: "100%", padding: "13px 14px", borderRadius: 12, border: "1px solid rgba(245,239,255,0.18)", background: "rgba(245,239,255,0.06)", color: "#F5EFFF", fontSize: 15, fontFamily: "'Manrope', sans-serif" },
+  input: { width: "100%", padding: "13px 14px", borderRadius: 12, border: "1px solid rgba(245,239,255,0.18)", background: "rgba(245,239,255,0.06)", color: "#F5EFFF", fontSize: 16, fontFamily: "'Manrope', sans-serif" },
   primaryBtn: { width: "100%", padding: "14px 16px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #F2779E, #E8B85C)", color: "#1B1035", fontWeight: 700, fontSize: 15, marginTop: 4 },
   hint: { marginTop: 14, fontSize: 12, color: "#8B7FA8", textAlign: "center" },
+  scoreboardBar: {
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: "#F5EFFF",
+    background: "rgba(232,184,92,0.08)", border: "1px solid rgba(232,184,92,0.25)",
+    borderRadius: 999, padding: "8px 16px", marginBottom: 16,
+  },
   error: { color: "#F2779E", fontSize: 13, marginBottom: 12, textAlign: "center" },
   center: { textAlign: "center" },
   codeBox: { fontFamily: "'JetBrains Mono', monospace", fontSize: 24, letterSpacing: "0.15em", color: "#F5EFFF", background: "rgba(245,239,255,0.08)", border: "1px dashed rgba(232,184,92,0.5)", borderRadius: 14, padding: "16px", cursor: "pointer" },
