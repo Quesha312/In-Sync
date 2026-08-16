@@ -623,6 +623,220 @@ function doDeucesDraw(latest, myId, discardIndices) {
   };
 }
 
+function buildTicTacToeGame(starterId, p1id, p2id) {
+  return {
+    type: "tictactoe",
+    board: Array(9).fill(""),
+    symbols: { [p1id]: "X", [p2id]: "O" },
+    turnPlayerId: starterId,
+    phase: "active",
+    overWinnerId: null,
+    winLine: null,
+  };
+}
+
+function doTicTacToeMove(latest, myId, index) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "tictactoe" || g.phase !== "active") return latest;
+  if (g.turnPlayerId !== myId) return latest;
+  const board = g.board || Array(9).fill("");
+  if (board[index]) return latest;
+  const mySymbol = g.symbols[myId];
+  const newBoard = [...board];
+  newBoard[index] = mySymbol;
+  const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+  let winLine = null;
+  for (const line of lines) {
+    const [a, b, c] = line;
+    if (newBoard[a] && newBoard[a] === newBoard[b] && newBoard[a] === newBoard[c]) { winLine = line; break; }
+  }
+  const full = newBoard.every((c) => c !== "");
+  const over = !!winLine || full;
+  const otherId = latest.players.find((p) => p.id !== myId)?.id;
+  const overWinnerId = winLine ? myId : full ? "tie" : null;
+  return {
+    ...latest,
+    scoreboard: winLine ? creditScoreboard(latest, myId) : latest.scoreboard,
+    game: { ...g, board: newBoard, winLine, phase: over ? "over" : "active", overWinnerId, turnPlayerId: over ? g.turnPlayerId : otherId },
+  };
+}
+
+function buildConnectFourGame(starterId, p1id, p2id) {
+  return {
+    type: "connectFour",
+    board: Array(42).fill(""),
+    symbols: { [p1id]: "💗", [p2id]: "💛" },
+    turnPlayerId: starterId,
+    phase: "active",
+    overWinnerId: null,
+  };
+}
+
+function doConnectFourMove(latest, myId, col) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "connectFour" || g.phase !== "active") return latest;
+  if (g.turnPlayerId !== myId) return latest;
+  const board = g.board || Array(42).fill("");
+  let targetIdx = -1;
+  for (let row = 5; row >= 0; row--) {
+    const idx = row * 7 + col;
+    if (!board[idx]) { targetIdx = idx; break; }
+  }
+  if (targetIdx === -1) return latest;
+  const symbol = g.symbols[myId];
+  const newBoard = [...board];
+  newBoard[targetIdx] = symbol;
+  const row = Math.floor(targetIdx / 7), col2 = targetIdx % 7;
+  function countDir(dr, dc) {
+    let r = row + dr, c = col2 + dc, count = 0;
+    while (r >= 0 && r < 6 && c >= 0 && c < 7 && newBoard[r * 7 + c] === symbol) { count++; r += dr; c += dc; }
+    return count;
+  }
+  const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+  let won = false;
+  for (const [dr, dc] of dirs) {
+    if (1 + countDir(dr, dc) + countDir(-dr, -dc) >= 4) { won = true; break; }
+  }
+  const full = newBoard.every((c) => c !== "");
+  const over = won || full;
+  const otherId = latest.players.find((p) => p.id !== myId)?.id;
+  const overWinnerId = won ? myId : full ? "tie" : null;
+  return {
+    ...latest,
+    scoreboard: won ? creditScoreboard(latest, myId) : latest.scoreboard,
+    game: { ...g, board: newBoard, phase: over ? "over" : "active", overWinnerId, turnPlayerId: over ? g.turnPlayerId : otherId },
+  };
+}
+
+function buildRPSGame() {
+  return { type: "rps", choices: {}, lastResult: null, roundNum: 0 };
+}
+
+function doRPSChoice(latest, myId, choice) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "rps") return latest;
+  const choices = { ...(g.choices || {}) };
+  if (choices[myId] !== undefined) return latest;
+  choices[myId] = choice;
+  const playerIds = latest.players.map((p) => p.id);
+  const bothChosen = playerIds.every((id) => choices[id] !== undefined);
+  if (!bothChosen) {
+    return { ...latest, game: { ...g, choices } };
+  }
+  const [p1, p2] = playerIds;
+  const c1 = choices[p1], c2 = choices[p2];
+  let winnerId;
+  if (c1 === c2) winnerId = "tie";
+  else if ((c1 === "rock" && c2 === "scissors") || (c1 === "paper" && c2 === "rock") || (c1 === "scissors" && c2 === "paper")) winnerId = p1;
+  else winnerId = p2;
+  return {
+    ...latest,
+    scoreboard: creditScoreboard(latest, winnerId),
+    game: { ...g, choices: {}, lastResult: { [p1]: c1, [p2]: c2, winnerId }, roundNum: (g.roundNum || 0) + 1 },
+  };
+}
+
+function buildHangmanGame(setterId, guesserId) {
+  return { type: "hangman", setterId, guesserId, word: null, guessedLetters: [], wrongCount: 0, phase: "setting", overResult: null };
+}
+
+function doSetHangmanWord(latest, myId, word) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "hangman" || g.phase !== "setting") return latest;
+  if (g.setterId !== myId) return latest;
+  const clean = word.trim().toUpperCase().replace(/[^A-Z ]/g, "");
+  if (!clean) return latest;
+  return { ...latest, game: { ...g, word: clean, phase: "guessing", guessedLetters: [], wrongCount: 0 } };
+}
+
+function doGuessLetter(latest, myId, letter) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "hangman" || g.phase !== "guessing") return latest;
+  if (g.guesserId !== myId) return latest;
+  const guessed = g.guessedLetters || [];
+  if (guessed.includes(letter)) return latest;
+  const newGuessed = [...guessed, letter];
+  const correct = g.word.includes(letter);
+  const wrongCount = (g.wrongCount || 0) + (correct ? 0 : 1);
+  const wordLetters = [...new Set(g.word.replace(/ /g, "").split(""))];
+  const allFound = wordLetters.every((l) => newGuessed.includes(l));
+  const lost = wrongCount >= 6;
+  const over = allFound || lost;
+  const overResult = over ? (allFound ? "won" : "lost") : null;
+  return {
+    ...latest,
+    scoreboard: over ? creditScoreboard(latest, allFound ? myId : g.setterId) : latest.scoreboard,
+    game: { ...g, guessedLetters: newGuessed, wrongCount, phase: over ? "over" : "guessing", overResult },
+  };
+}
+
+function buildTwentyQGame(chooserId, guesserId) {
+  return { type: "twentyQ", chooserId, guesserId, secret: null, phase: "choosing", log: [], questionCount: 0, overResult: null, pendingQuestion: null, pendingGuess: null };
+}
+
+function doSetSecret(latest, myId, secret) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "twentyQ" || g.phase !== "choosing") return latest;
+  if (g.chooserId !== myId) return latest;
+  const clean = secret.trim();
+  if (!clean) return latest;
+  return { ...latest, game: { ...g, secret: clean, phase: "playing", log: [], questionCount: 0 } };
+}
+
+function doAskQuestion(latest, myId, text) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "twentyQ" || g.phase !== "playing") return latest;
+  if (g.guesserId !== myId) return latest;
+  if (g.pendingQuestion || g.pendingGuess) return latest;
+  const clean = text.trim();
+  if (!clean || (g.questionCount || 0) >= 20) return latest;
+  return { ...latest, game: { ...g, pendingQuestion: clean } };
+}
+
+function doAnswerQuestion(latest, myId, answer) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "twentyQ" || g.phase !== "playing") return latest;
+  if (g.chooserId !== myId || !g.pendingQuestion) return latest;
+  const log = [...(g.log || []), { question: g.pendingQuestion, answer }];
+  const questionCount = (g.questionCount || 0) + 1;
+  const outOfQuestions = questionCount >= 20;
+  return {
+    ...latest,
+    scoreboard: outOfQuestions ? creditScoreboard(latest, g.chooserId) : latest.scoreboard,
+    game: { ...g, log, questionCount, pendingQuestion: null, phase: outOfQuestions ? "over" : "playing", overResult: outOfQuestions ? "lost" : null },
+  };
+}
+
+function doSubmitGuess20Q(latest, myId, text) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "twentyQ" || g.phase !== "playing") return latest;
+  if (g.guesserId !== myId) return latest;
+  if (g.pendingQuestion || g.pendingGuess) return latest;
+  const clean = text.trim();
+  if (!clean) return latest;
+  return { ...latest, game: { ...g, pendingGuess: clean } };
+}
+
+function doConfirmGuess20Q(latest, myId, correct) {
+  if (!latest) return undefined;
+  const g = latest.game;
+  if (!g || g.type !== "twentyQ" || g.phase !== "playing") return latest;
+  if (g.chooserId !== myId || !g.pendingGuess) return latest;
+  if (correct) {
+    return { ...latest, scoreboard: creditScoreboard(latest, g.guesserId), game: { ...g, phase: "over", overResult: "won", pendingGuess: null } };
+  }
+  return { ...latest, game: { ...g, pendingGuess: null } };
+}
+
 const GAME_MENU = [
   { key: "qa", label: "In Sync Q&A", blurb: "See how many answers line up" },
   { key: "war", label: "War", blurb: "Flip cards, highest wins the pot" },
@@ -633,6 +847,11 @@ const GAME_MENU = [
   { key: "crazyEights", label: "Crazy Eights", blurb: "Match rank or suit, 8s are wild" },
   { key: "tonk", label: "Tonk", blurb: "Meld sets, keep your hand low" },
   { key: "deuces", label: "Deuces Wild", blurb: "Draw poker, 2s are wild" },
+  { key: "tictactoe", label: "Tic Tac Toe", blurb: "Three in a row" },
+  { key: "connectFour", label: "Connect Four", blurb: "Four in a row, drop and win" },
+  { key: "rps", label: "Rock Paper Scissors", blurb: "Quick rounds, best reflexes" },
+  { key: "hangman", label: "Hangman", blurb: "Guess the word, letter by letter" },
+  { key: "twentyQ", label: "20 Questions", blurb: "Guess what they're thinking of" },
 ];
 
 export default function App() {
@@ -654,6 +873,10 @@ export default function App() {
   const [pendingEightIndex, setPendingEightIndex] = useState(null);
   const [tonkSelection, setTonkSelection] = useState([]);
   const [deucesSelection, setDeucesSelection] = useState([]);
+  const [hangmanWordInput, setHangmanWordInput] = useState("");
+  const [secretInput, setSecretInput] = useState("");
+  const [questionInput, setQuestionInput] = useState("");
+  const [guessInput, setGuessInput] = useState("");
 
   useEffect(() => { setTextVal(""); }, [room?.game?.round?.promptId]);
 
@@ -1108,6 +1331,76 @@ export default function App() {
     setBusy(false);
   }, [roomCode]);
 
+  const playTicTacToe = useCallback(async (index) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doTicTacToeMove(latest, myId.current, index)); }
+    catch (e) { console.error(e); setError(`Couldn't play: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const playConnectFour = useCallback(async (col) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doConnectFourMove(latest, myId.current, col)); }
+    catch (e) { console.error(e); setError(`Couldn't drop that: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const playRPS = useCallback(async (choice) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doRPSChoice(latest, myId.current, choice)); }
+    catch (e) { console.error(e); setError(`Couldn't submit: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const setHangmanWord = useCallback(async (word) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doSetHangmanWord(latest, myId.current, word)); setHangmanWordInput(""); }
+    catch (e) { console.error(e); setError(`Couldn't set that: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const guessHangmanLetter = useCallback(async (letter) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doGuessLetter(latest, myId.current, letter)); }
+    catch (e) { console.error(e); setError(`Couldn't guess: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const setTwentyQSecret = useCallback(async (secret) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doSetSecret(latest, myId.current, secret)); setSecretInput(""); }
+    catch (e) { console.error(e); setError(`Couldn't set that: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const askTwentyQ = useCallback(async (text) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doAskQuestion(latest, myId.current, text)); setQuestionInput(""); }
+    catch (e) { console.error(e); setError(`Couldn't ask: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const answerTwentyQ = useCallback(async (answer) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doAnswerQuestion(latest, myId.current, answer)); }
+    catch (e) { console.error(e); setError(`Couldn't answer: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const submitTwentyQGuess = useCallback(async (text) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doSubmitGuess20Q(latest, myId.current, text)); setGuessInput(""); }
+    catch (e) { console.error(e); setError(`Couldn't submit: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
+  const confirmTwentyQGuess = useCallback(async (correct) => {
+    setBusy(true); setError("");
+    try { await updateRoom(roomCode, (latest) => doConfirmGuess20Q(latest, myId.current, correct)); }
+    catch (e) { console.error(e); setError(`Couldn't confirm: ${e.code || e.message || "unknown error"}`); }
+    setBusy(false);
+  }, [roomCode]);
+
   const leaveRoom = useCallback(async () => {
     setBusy(true);
     try {
@@ -1250,6 +1543,11 @@ export default function App() {
                     else if (g.key === "crazyEights") pickGame(buildCrazyEightsGame(myId.current, myId.current, partner.id));
                     else if (g.key === "tonk") pickGame(buildTonkGame(myId.current, myId.current, partner.id));
                     else if (g.key === "deuces") pickGame(buildDeucesGame(myId.current, partner.id));
+                    else if (g.key === "tictactoe") pickGame(buildTicTacToeGame(myId.current, myId.current, partner.id));
+                    else if (g.key === "connectFour") pickGame(buildConnectFourGame(myId.current, myId.current, partner.id));
+                    else if (g.key === "rps") pickGame(buildRPSGame());
+                    else if (g.key === "hangman") pickGame(buildHangmanGame(myId.current, partner.id));
+                    else if (g.key === "twentyQ") pickGame(buildTwentyQGame(myId.current, partner.id));
                   }} disabled={busy}>
                     <div style={{ fontWeight: 700, fontFamily: "'Fraunces', serif", fontSize: 17 }}>{g.label}</div>
                     <div style={{ fontSize: 12, color: "#8B7FA8", marginTop: 2 }}>{g.blurb}</div>
@@ -1879,6 +2177,265 @@ export default function App() {
                 </div>
               )}
               <div style={{ textAlign: "center", marginTop: 16 }}><button className="leaveLink" onClick={backToMenu} disabled={busy}>back to menu</button></div>
+            </div>
+          );
+        })()}
+
+        {joined && room && room.status === "playing" && room.game?.type === "tictactoe" && (() => {
+          const g = room.game;
+          const board = g.board || Array(9).fill("");
+          const myTurn = g.turnPlayerId === myId.current;
+          const mySymbol = g.symbols?.[myId.current];
+          return (
+            <div className="fadeUp">
+              <div style={styles.center}>
+                <div style={styles.eyebrow}>Tic Tac Toe</div>
+                <p style={styles.sub}>You're {mySymbol} · {partner?.name} is {g.symbols?.[partner?.id]}</p>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 16, maxWidth: 240, marginLeft: "auto", marginRight: "auto" }}>
+                {board.map((cell, i) => (
+                  <button key={i} onClick={() => myTurn && !cell && g.phase === "active" && playTicTacToe(i)} disabled={!myTurn || !!cell || g.phase !== "active" || busy}
+                    style={{ aspectRatio: "1", borderRadius: 10, border: g.winLine?.includes(i) ? "2px solid #E8B85C" : "1px solid rgba(245,239,255,0.15)", background: g.winLine?.includes(i) ? "rgba(232,184,92,0.15)" : "rgba(245,239,255,0.05)", fontSize: 28, color: "#F5EFFF", fontWeight: 700 }}>
+                    {cell}
+                  </button>
+                ))}
+              </div>
+              {g.phase === "active" && (
+                <p style={styles.sub}>{myTurn ? "Your turn" : `${partner?.name}'s turn`}</p>
+              )}
+              {g.phase === "over" && (
+                <div style={styles.center}>
+                  <div className="heartPop" style={styles.matchText}>{g.overWinnerId === "tie" ? "It's a tie!" : g.overWinnerId === myId.current ? "You win!" : `${partner?.name} wins!`}</div>
+                  <button style={styles.primaryBtn} onClick={backToMenu} disabled={busy}>Back to menu</button>
+                </div>
+              )}
+              {g.phase !== "over" && (
+                <div style={{ textAlign: "center", marginTop: 16 }}><button className="leaveLink" onClick={backToMenu} disabled={busy}>back to menu</button></div>
+              )}
+            </div>
+          );
+        })()}
+
+        {joined && room && room.status === "playing" && room.game?.type === "connectFour" && (() => {
+          const g = room.game;
+          const board = g.board || Array(42).fill("");
+          const myTurn = g.turnPlayerId === myId.current;
+          const mySymbol = g.symbols?.[myId.current];
+          return (
+            <div className="fadeUp">
+              <div style={styles.center}>
+                <div style={styles.eyebrow}>Connect Four</div>
+                <p style={styles.sub}>You're {mySymbol} · {partner?.name} is {g.symbols?.[partner?.id]}</p>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
+                {Array.from({ length: 7 }).map((_, col) => (
+                  <button key={col} onClick={() => myTurn && g.phase === "active" && playConnectFour(col)} disabled={!myTurn || g.phase !== "active" || busy || board[col] !== ""}
+                    style={{ padding: "6px 0", borderRadius: 8, border: "1px solid rgba(245,239,255,0.2)", background: "rgba(245,239,255,0.06)", color: "#E8B85C", fontSize: 14 }}>▼</button>
+                ))}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 16 }}>
+                {board.map((cell, i) => (
+                  <div key={i} style={{ aspectRatio: "1", borderRadius: "50%", border: "1px solid rgba(245,239,255,0.15)", background: "rgba(245,239,255,0.04)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{cell}</div>
+                ))}
+              </div>
+              {g.phase === "active" && (<p style={styles.sub}>{myTurn ? "Your turn" : `${partner?.name}'s turn`}</p>)}
+              {g.phase === "over" && (
+                <div style={styles.center}>
+                  <div className="heartPop" style={styles.matchText}>{g.overWinnerId === "tie" ? "It's a tie!" : g.overWinnerId === myId.current ? "You win!" : `${partner?.name} wins!`}</div>
+                  <button style={styles.primaryBtn} onClick={backToMenu} disabled={busy}>Back to menu</button>
+                </div>
+              )}
+              {g.phase !== "over" && (
+                <div style={{ textAlign: "center", marginTop: 16 }}><button className="leaveLink" onClick={backToMenu} disabled={busy}>back to menu</button></div>
+              )}
+            </div>
+          );
+        })()}
+
+        {joined && room && room.status === "playing" && room.game?.type === "rps" && (() => {
+          const g = room.game;
+          const choices = g.choices || {};
+          const iChose = choices[myId.current] !== undefined;
+          const RPS_EMOJI = { rock: "🪨", paper: "📄", scissors: "✂️" };
+          return (
+            <div className="fadeUp">
+              <div style={styles.center}>
+                <div style={styles.eyebrow}>Rock Paper Scissors</div>
+                <p style={styles.sub}>Round {(g.roundNum || 0) + 1}</p>
+              </div>
+              {g.lastResult && (
+                <div style={styles.center}>
+                  <p>
+                    <span className="cardFace" style={{ fontSize: 28 }}>{RPS_EMOJI[g.lastResult[myId.current]]}</span>
+                    <span style={{ margin: "0 10px", color: "#8B7FA8" }}>vs</span>
+                    <span className="cardFace" style={{ fontSize: 28 }}>{RPS_EMOJI[g.lastResult[partner?.id]]}</span>
+                  </p>
+                  <p style={styles.sub}>{g.lastResult.winnerId === "tie" ? "Tie!" : g.lastResult.winnerId === myId.current ? "You won that round!" : `${partner?.name} won that round!`}</p>
+                </div>
+              )}
+              {!iChose ? (
+                <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+                  {["rock", "paper", "scissors"].map((c) => (
+                    <button key={c} className="optionRow" style={{ width: "auto", padding: "16px 20px", fontSize: 24 }} onClick={() => playRPS(c)} disabled={busy}>{RPS_EMOJI[c]}</button>
+                  ))}
+                </div>
+              ) : (
+                <div style={styles.center}>
+                  <div className="orbWrap"><div className="orb" style={{ background: "#F2779E", color: "#F2779E" }}></div></div>
+                  <p style={styles.sub}>Waiting for {partner?.name}...</p>
+                </div>
+              )}
+              <div style={{ textAlign: "center", marginTop: 16 }}><button className="leaveLink" onClick={backToMenu} disabled={busy}>back to menu</button></div>
+            </div>
+          );
+        })()}
+
+        {joined && room && room.status === "playing" && room.game?.type === "hangman" && (() => {
+          const g = room.game;
+          const iAmSetter = g.setterId === myId.current;
+          const guessedLetters = g.guessedLetters || [];
+          const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+          const displayWord = g.word ? g.word.split("").map((ch) => (ch === " " ? " " : guessedLetters.includes(ch) || g.phase === "over" ? ch : "_")).join(" ") : "";
+          const livesLeft = 6 - (g.wrongCount || 0);
+          return (
+            <div className="fadeUp">
+              <div style={styles.center}><div style={styles.eyebrow}>Hangman</div></div>
+              {g.phase === "setting" && iAmSetter && (
+                <div>
+                  <p style={styles.sub}>Think of a secret word or phrase for {partner?.name} to guess:</p>
+                  <input style={styles.input} value={hangmanWordInput} onChange={(e) => setHangmanWordInput(e.target.value)} placeholder="Type your secret..." maxLength={40} />
+                  <button style={{ ...styles.primaryBtn, marginTop: 12 }} onClick={() => setHangmanWord(hangmanWordInput)} disabled={busy || !hangmanWordInput.trim()}>Lock it in</button>
+                </div>
+              )}
+              {g.phase === "setting" && !iAmSetter && (
+                <div style={styles.center}>
+                  <div className="orbWrap"><div className="orb" style={{ background: "#F2779E", color: "#F2779E" }}></div></div>
+                  <p style={styles.sub}>Waiting for {partner?.name} to pick a word...</p>
+                </div>
+              )}
+              {(g.phase === "guessing" || g.phase === "over") && (
+                <div>
+                  <div style={styles.center}>
+                    <p style={{ fontSize: 26, letterSpacing: "0.1em", fontFamily: "'JetBrains Mono', monospace", color: "#F5EFFF", marginBottom: 12 }}>{displayWord}</p>
+                    <p style={styles.sub}>{"💗".repeat(Math.max(livesLeft, 0))}{"🖤".repeat(6 - Math.max(livesLeft, 0))}</p>
+                  </div>
+                  {g.phase === "guessing" && !iAmSetter && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", marginBottom: 16 }}>
+                      {alphabet.map((l) => (
+                        <button key={l} onClick={() => guessHangmanLetter(l)} disabled={busy || guessedLetters.includes(l)}
+                          style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(245,239,255,0.2)", background: guessedLetters.includes(l) ? "rgba(245,239,255,0.03)" : "rgba(245,239,255,0.08)", color: guessedLetters.includes(l) ? "#8B7FA8" : "#F5EFFF", fontSize: 13 }}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {g.phase === "guessing" && iAmSetter && (
+                    <div style={styles.center}>
+                      <div className="orbWrap"><div className="orb" style={{ background: "#E8B85C", color: "#E8B85C" }}></div></div>
+                      <p style={styles.sub}>{partner?.name} is guessing...</p>
+                    </div>
+                  )}
+                  {g.phase === "over" && (
+                    <div style={styles.center}>
+                      <div className="heartPop" style={styles.matchText}>{g.overResult === "won" ? (iAmSetter ? `${partner?.name} got it!` : "You got it!") : iAmSetter ? "You stumped them!" : "Out of hearts!"}</div>
+                      <button style={styles.primaryBtn} onClick={backToMenu} disabled={busy}>Back to menu</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {g.phase !== "over" && (
+                <div style={{ textAlign: "center", marginTop: 16 }}><button className="leaveLink" onClick={backToMenu} disabled={busy}>back to menu</button></div>
+              )}
+            </div>
+          );
+        })()}
+
+        {joined && room && room.status === "playing" && room.game?.type === "twentyQ" && (() => {
+          const g = room.game;
+          const iAmChooser = g.chooserId === myId.current;
+          const log = g.log || [];
+          return (
+            <div className="fadeUp">
+              <div style={styles.center}>
+                <div style={styles.eyebrow}>20 Questions</div>
+                {g.phase === "playing" && <p style={styles.sub}>{g.questionCount || 0} / 20 questions asked</p>}
+              </div>
+              {g.phase === "choosing" && iAmChooser && (
+                <div>
+                  <p style={styles.sub}>Think of something for {partner?.name} to guess:</p>
+                  <input style={styles.input} value={secretInput} onChange={(e) => setSecretInput(e.target.value)} placeholder="Type your secret..." maxLength={60} />
+                  <button style={{ ...styles.primaryBtn, marginTop: 12 }} onClick={() => setTwentyQSecret(secretInput)} disabled={busy || !secretInput.trim()}>Lock it in</button>
+                </div>
+              )}
+              {g.phase === "choosing" && !iAmChooser && (
+                <div style={styles.center}>
+                  <div className="orbWrap"><div className="orb" style={{ background: "#F2779E", color: "#F2779E" }}></div></div>
+                  <p style={styles.sub}>Waiting for {partner?.name} to think of something...</p>
+                </div>
+              )}
+              {(g.phase === "playing" || g.phase === "over") && (
+                <div>
+                  {log.length > 0 && (
+                    <div style={{ ...styles.historyList, maxHeight: 200, overflowY: "auto" }}>
+                      {log.map((entry, i) => (
+                        <div key={i} style={styles.historyItem}>
+                          <div style={styles.historyPrompt}>{entry.question}</div>
+                          <div style={{ color: "#E8B85C", fontSize: 12 }}>{entry.answer}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {g.phase === "playing" && !iAmChooser && !g.pendingQuestion && !g.pendingGuess && (
+                    <div>
+                      <input style={styles.input} value={questionInput} onChange={(e) => setQuestionInput(e.target.value)} placeholder="Ask a yes/no question..." maxLength={100} />
+                      <button style={{ ...styles.primaryBtn, marginTop: 8 }} onClick={() => askTwentyQ(questionInput)} disabled={busy || !questionInput.trim()}>Ask</button>
+                      <input style={{ ...styles.input, marginTop: 16 }} value={guessInput} onChange={(e) => setGuessInput(e.target.value)} placeholder="Or make your final guess..." maxLength={60} />
+                      <button style={{ ...styles.primaryBtn, marginTop: 8, background: "transparent", border: "1px solid #E8B85C", color: "#E8B85C" }} onClick={() => submitTwentyQGuess(guessInput)} disabled={busy || !guessInput.trim()}>Guess</button>
+                    </div>
+                  )}
+                  {g.phase === "playing" && iAmChooser && g.pendingQuestion && (
+                    <div style={styles.center}>
+                      <p style={styles.prompt}>{g.pendingQuestion}</p>
+                      <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                        {["Yes", "No", "Maybe"].map((a) => (
+                          <button key={a} className="optionRow" style={{ width: "auto", padding: "10px 18px" }} onClick={() => answerTwentyQ(a)} disabled={busy}>{a}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {g.phase === "playing" && iAmChooser && g.pendingGuess && (
+                    <div style={styles.center}>
+                      <p style={styles.sub}>{partner?.name} guesses: <strong style={{ color: "#F5EFFF" }}>{g.pendingGuess}</strong></p>
+                      <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                        <button className="optionRow" style={{ width: "auto", padding: "10px 18px" }} onClick={() => confirmTwentyQGuess(true)} disabled={busy}>Correct!</button>
+                        <button className="optionRow" style={{ width: "auto", padding: "10px 18px" }} onClick={() => confirmTwentyQGuess(false)} disabled={busy}>Nope</button>
+                      </div>
+                    </div>
+                  )}
+                  {g.phase === "playing" && iAmChooser && !g.pendingQuestion && !g.pendingGuess && (
+                    <div style={styles.center}>
+                      <div className="orbWrap"><div className="orb" style={{ background: "#E8B85C", color: "#E8B85C" }}></div></div>
+                      <p style={styles.sub}>Waiting for {partner?.name}'s next move...</p>
+                    </div>
+                  )}
+                  {g.phase === "playing" && !iAmChooser && (g.pendingQuestion || g.pendingGuess) && (
+                    <div style={styles.center}>
+                      <div className="orbWrap"><div className="orb" style={{ background: "#F2779E", color: "#F2779E" }}></div></div>
+                      <p style={styles.sub}>Waiting for {partner?.name} to respond...</p>
+                    </div>
+                  )}
+                  {g.phase === "over" && (
+                    <div style={styles.center}>
+                      <p style={styles.sub}>It was: <strong style={{ color: "#F5EFFF" }}>{g.secret}</strong></p>
+                      <div className="heartPop" style={styles.matchText}>{g.overResult === "won" ? (iAmChooser ? `${partner?.name} got it!` : "You got it!") : iAmChooser ? "You stumped them!" : "Out of questions!"}</div>
+                      <button style={styles.primaryBtn} onClick={backToMenu} disabled={busy}>Back to menu</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {g.phase !== "over" && (
+                <div style={{ textAlign: "center", marginTop: 16 }}><button className="leaveLink" onClick={backToMenu} disabled={busy}>back to menu</button></div>
+              )}
             </div>
           );
         })()}
